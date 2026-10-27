@@ -15,6 +15,7 @@ Conventions
     counted in the order's totals, and flagged as DATA_MISMATCH.
   - Orders without a limit price (market orders) skip the limit check.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -40,11 +41,14 @@ TOLERANCE = 1e-9
 
 @dataclass
 class ReconciliationResult:
-    orders: pd.DataFrame      # one row per order, with status
+    orders: pd.DataFrame  # one row per order, with status
     exceptions: pd.DataFrame  # one row per exception
 
 
 def load_data(orders_path, executions_path):
+    orders_path = Path(orders_path)
+    executions_path = Path(executions_path)
+
     return pd.read_csv(orders_path), pd.read_csv(executions_path)
 
 
@@ -111,7 +115,9 @@ def reconcile(orders: pd.DataFrame, executions: pd.DataFrame) -> ReconciliationR
         .reset_index()
     )
     exception_frames.append(
-        _to_exceptions(DUPLICATE, dups, lambda r: f"Execution ID appears {r['n']} times")
+        _to_exceptions(
+            DUPLICATE, dups, lambda r: f"Execution ID appears {r['n']} times"
+        )
     )
     clean = executions.drop_duplicates("execution_id", keep="first")
 
@@ -146,7 +152,9 @@ def reconcile(orders: pd.DataFrame, executions: pd.DataFrame) -> ReconciliationR
             parts.append(f"symbol {r['symbol']} vs order {r['order_symbol']}")
         return "; ".join(parts)
 
-    exception_frames.append(_to_exceptions(MISMATCH, matched[mismatch_mask], mismatch_detail))
+    exception_frames.append(
+        _to_exceptions(MISMATCH, matched[mismatch_mask], mismatch_detail)
+    )
 
     # 4. Limit price: a BUY above its limit, or a SELL below its limit.
     buy_breach = (matched["order_side"] == "BUY") & (
@@ -179,7 +187,9 @@ def reconcile(orders: pd.DataFrame, executions: pd.DataFrame) -> ReconciliationR
     for col in ("executed_qty", "n_executions", "notional"):
         status[col] = status[col].fillna(0)
 
-    status["remaining_qty"] = (status["quantity"] - status["executed_qty"]).clip(lower=0)
+    status["remaining_qty"] = (status["quantity"] - status["executed_qty"]).clip(
+        lower=0
+    )
     status["fill_pct"] = (status["executed_qty"] / status["quantity"] * 100).round(1)
     status["avg_price"] = (status["notional"] / status["executed_qty"]).where(
         status["executed_qty"] > 0
@@ -208,9 +218,11 @@ def reconcile(orders: pd.DataFrame, executions: pd.DataFrame) -> ReconciliationR
         )
     )
 
-    exceptions = pd.concat(
-        [f for f in exception_frames if not f.empty], ignore_index=True
-    ) if any(not f.empty for f in exception_frames) else pd.DataFrame(columns=EXCEPTION_COLUMNS)
+    exceptions = (
+        pd.concat([f for f in exception_frames if not f.empty], ignore_index=True)
+        if any(not f.empty for f in exception_frames)
+        else pd.DataFrame(columns=EXCEPTION_COLUMNS)
+    )
 
     counts = exceptions.groupby("order_id").size()
     status["exception_count"] = status["order_id"].map(counts).fillna(0).astype("int64")
@@ -239,10 +251,21 @@ def summarize(result: ReconciliationResult) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Reconcile client orders with executions.")
-    parser.add_argument("--orders", default="data/orders.csv")
-    parser.add_argument("--executions", default="data/executions.csv")
-    parser.add_argument("--out", help="folder where order_status.csv and exceptions.csv are written")
+    repo_dir = Path(__file__).resolve().parent
+    default_data_dir = repo_dir / "data"
+
+    parser = argparse.ArgumentParser(
+        description="Reconcile client orders with executions."
+    )
+    parser.add_argument("--orders", type=Path, default=default_data_dir / "orders.csv")
+    parser.add_argument(
+        "--executions", type=Path, default=default_data_dir / "executions.csv"
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        help="folder where order_status.csv and exceptions.csv are written",
+    )
     args = parser.parse_args()
 
     start = time.perf_counter()
@@ -264,7 +287,7 @@ def main():
         print(result.exceptions.to_string(index=False))
 
     if args.out:
-        out = Path(args.out)
+        out = args.out
         out.mkdir(parents=True, exist_ok=True)
         result.orders.to_csv(out / "order_status.csv", index=False)
         result.exceptions.to_csv(out / "exceptions.csv", index=False)

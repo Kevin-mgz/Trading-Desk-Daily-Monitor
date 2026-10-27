@@ -1,32 +1,37 @@
 # Trading Desk Daily Monitor
 
-A small Python tool that reconciles client orders with their executions and lists the ones a trader should look at.
+Reconciliation of client orders and executions, with automatic detection of operational exceptions.
 
-It runs on synthetic data. Nothing is connected to a bank system, and the setup is a simplified picture of an execution desk, not a description of a real one.
+Personal project built on synthetic data. It is not connected to any bank system and does not describe how any real desk works.
 
-## Why
+## Problem
 
-On a desk, client instructions (OMS) and market fills (EMS) sit in separate files. Checking an order means finding all its executions, adding them up and comparing with what was asked. I wanted to automate that part and only show what needs a human.
+On an execution desk, order instructions (OMS), market executions (EMS) and reporting files live in different places and formats. Checking that an order was executed correctly means comparing several files by hand.
 
 ## What it does
 
-For each order, the script finds its executions, sums the quantity, computes the remaining quantity and the volume-weighted average price, and sets a status: Filled, Partial, No fill or Overfill.
+- Matches every execution to its client order.
+- Computes executed quantity, remaining quantity and volume-weighted average price per order.
+- Gives each order a follow-up status: `Filled`, `Partial`, `No fill`, `Overfill`.
+- Reports only the real exceptions, so the trader looks at those and nothing else.
 
-Partial and unfilled orders are normal follow-up states, so they are not treated as errors. Exceptions are limited to five checks:
+Partial fills and unfilled orders are statuses, not errors. Only the checks below raise exceptions.
 
-- orphan execution: no matching client order
-- duplicate execution ID
-- overfill: executed quantity above ordered quantity
-- data mismatch: execution side or symbol differs from the order
-- limit breach: a BUY executed above its limit, or a SELL below it
+| Check | Meaning |
+|---|---|
+| `ORPHAN_EXECUTION` | An execution has no matching client order |
+| `DUPLICATE_EXECUTION` | The same execution ID appears more than once |
+| `OVERFILL` | Executed quantity is above the ordered quantity |
+| `DATA_MISMATCH` | Execution side or symbol differs from its order |
+| `LIMIT_BREACH` | A BUY executed above its limit, or a SELL below its limit |
 
-Some choices worth knowing: a duplicated execution ID is counted once, an execution with the wrong side or symbol is still counted in the order totals but flagged, and market orders (no limit) skip the limit check.
+Conventions: duplicated execution IDs are counted once; executions with a mismatching side or symbol still count in the order totals and are flagged; market orders (no limit) skip the limit check.
 
 ## Data
 
-`generate_data.py` creates 150 orders across equities, ETFs, futures, options, crypto ETPs and one structured product, with 232 executions. It injects 10 known anomalies (two per check) and saves them in `data/injected_anomalies.csv`.
+`generate_data.py` produces 150 orders across equities, ETFs, futures, options, crypto ETPs and a structured product, and 232 executions. It injects 10 known anomalies (2 of each check) and writes them to `data/injected_anomalies.csv`. A test checks that the engine finds exactly those and nothing else.
 
-## Usage
+## Run
 
 ```bash
 pip install -r requirements.txt
@@ -35,7 +40,7 @@ python reconciliation.py --out output
 pytest
 ```
 
-Output on the default dataset:
+Example output:
 
 ```
 Orders processed : 150
@@ -47,12 +52,18 @@ Orders to review : 8
 Match rate       : 74.7%
 ```
 
-Match rate is the share of orders that are fully filled with no exception attached.
+Match rate = orders fully filled with no exception attached, divided by all orders.
 
-## Tests
+## Structure
 
-Each check has its own test on a small hand-made case. One more test generates the full dataset and verifies that the engine flags exactly the 10 injected anomalies, no more and no fewer.
+```
+data/                 orders.csv, executions.csv, injected_anomalies.csv
+generate_data.py      synthetic data with injected anomalies
+reconciliation.py     matching logic and checks
+tests/                pytest tests, one per check
+```
 
-## Status
+## Next
 
-The reconciliation engine and tests are done. A Streamlit dashboard (CSV upload, filters, exceptions page) is next.
+- Streamlit dashboard: CSV upload, filters, indicators, exceptions page.
+- CSV export of exceptions.

@@ -193,7 +193,9 @@ def main():
     parser = argparse.ArgumentParser(description="Generate synthetic trading data.")
     parser.add_argument("--orders", type=int, default=150, help="number of client orders")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--out-dir", default="data")
+    parser.add_argument(
+        "--out-dir", type=Path, default=Path(__file__).resolve().parent / "data"
+    )
     args = parser.parse_args()
 
     orders, executions, injected = generate(args.orders, args.seed)
